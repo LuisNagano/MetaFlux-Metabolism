@@ -40,32 +40,32 @@ The analysis leverages normalized RNA-seq data and a detailed calculation of Met
 ### 1. **Figure 1: Mean Metabolic Fluxes Comparison**
    This figure compares the mean metabolic fluxes between ACC-COC3 (human) and BPCre (mouse) models. A strong correlation was observed, indicating a high degree of similarity between the metabolic behaviors of both models.
 
-   ![Mean Fluxes](link_to_figure1)
+   ![Mean Fluxes](https://github.com/LuisNagano/MetaFlux-Metabolism/blob/main/Results/Figure1_Mean_Fluxes.png)
 
 ### 2. **Figure 2: Pathway Activity Comparison**
    This visualization highlights the activity levels of key metabolic pathways between ACC-COC3 and BPCre. The analysis identified highly conserved pathways, particularly in amino acid and lipid metabolism.
 
-   ![Pathway Activity](link_to_figure2)
+   ![Pathway Activity](https://github.com/LuisNagano/MetaFlux-Metabolism/blob/main/Results/Figure2_Pathway_Activity.png)
 
 ### 3. **Heatmap: Correlation of Top 30 Reactions**
    The heatmap below shows the correlation of the top 30 metabolic reactions shared between human ACC-COC3 and mouse BPCre models, revealing potential therapeutic targets.
 
-   ![Top 30 Correlations](link_to_heatmap)
+   ![Top 30 Correlations](https://github.com/LuisNagano/MetaFlux-Metabolism/blob/main/Results/Heatmap_Top30_Correlations.png)
 
 ### 4. **Figure: Specific Metabolic Pathways**
    We performed detailed analyses of several metabolic pathways:
 
    - **Pyrimidine Metabolism**:
      Significant similarity between fluxes in pyrimidine metabolism, suggesting similar nucleotide synthesis dynamics.
-     ![Pyrimidine Metabolism](link_to_figure_pyrimidine)
+     ![Pyrimidine Metabolism](https://github.com/LuisNagano/MetaFlux-Metabolism/blob/main/Results/Figure_Mean_Fluxes_Alanine_Aspartate_Glutamate_Metabolism.png)
    
    - **Arginine and Proline Metabolism**:
      Differences observed in fluxes may reveal species-specific metabolic vulnerabilities.
-     ![Arginine Proline Metabolism](link_to_figure_arginine)
+     ![Arginine Proline Metabolism](https://github.com/LuisNagano/MetaFlux-Metabolism/blob/main/Results/Figure_Mean_Fluxes_Arginine_Proline_Metabolism.png)
 
    - **Alanine, Aspartate and Glutamate Metabolism**:
      Highly correlated fluxes in this pathway suggest conserved amino acid metabolism mechanisms.
-     ![Alanine Aspartate Glutamate Metabolism](link_to_figure_alanine)
+     ![Alanine Aspartate Glutamate Metabolism](https://github.com/LuisNagano/MetaFlux-Metabolism/blob/main/Results/Figure_Mean_Fluxes_Alanine_Aspartate_Glutamate_Metabolism.png)
 
 ## Insights and Implications
 
