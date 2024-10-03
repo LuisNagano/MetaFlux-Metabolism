@@ -1,0 +1,710 @@
+# Comparative Metabolic Flux Analysis between Human and Mouse Models
+
+## Introduction
+
+This notebook presents a comparative analysis of metabolic fluxes between human adrenocortical carcinoma (ACC) samples and a mouse BPCre tumor model. The analysis involves calculating metabolic reaction activity scores (MRAS), computing metabolic fluxes, and performing comparative analyses across different metabolic pathways and subsystems.
+
+---
+
+## 1. Load Necessary Packages and Set Up Environment
+
+```{r}
+# Install necessary packages (execute only once)
+# install.packages(c("METAFlux", "ggplot2", "dplyr", "pheatmap", "reshape2",
+#                    "readr", "tidyr", "clusterProfiler", "DESeq2",
+#                    "org.Hs.eg.db", "org.Mm.eg.db", "caret", "e1071",
+#                    "igraph", "stringr", "homologene", "gt", "webshot2"))
+# webshot2::install_phantomjs()  # Necessary for saving tables as images
+
+# Set the working directory (adjust as necessary)
+setwd("C:/Users/bruep/OneDrive/Área de Trabalho/Kleiton/METAFlux/Metaflux_update")
+
+# Load packages
+library(METAFlux)
+library(ggplot2)
+library(dplyr)
+library(pheatmap)
+library(reshape2)
+library(readr)
+library(tidyr)
+library(clusterProfiler)
+library(DESeq2)
+library(org.Hs.eg.db)
+library(org.Mm.eg.db)
+library(caret)
+library(e1071)
+library(igraph)
+library(stringr)    # For string manipulation
+library(homologene) # For gene mapping between species
+library(gt)         # For creating and exporting tables
+library(webshot2)   # For saving tables as images
+
+# Check if PhantomJS is installed (necessary for webshot2)
+# If not installed, uncomment the line below:
+# webshot2::install_phantomjs()
+
+# Define auxiliary function for normalization (cubic root)
+cbrt <- function(x) {
+  sign(x) * abs(x)^(1/3)
+}
+```
+
+---
+
+## 2. Load Data
+
+### 2.1. Load Human and Mouse Expression Data
+
+```{r}
+# Load human data - ACC (TCGA and ACC-COC3)
+human_tcga_coc3 <- read.delim("TCGA-COC3_data.txt", row.names = 1)
+
+# Load mouse data - BPCre model (tumor)
+mouse_bpcre <- read.delim("BPCre_data.txt", row.names = 1)
+
+# Check dimensions of the data
+dim(human_tcga_coc3)
+dim(mouse_bpcre)
+
+# Ensure there are no negative values in the expression data
+# Replace negative values with zero (if any)
+human_tcga_coc3[human_tcga_coc3 < 0] <- 0
+mouse_bpcre[mouse_bpcre < 0] <- 0
+```
+
+---
+
+## 3. Calculate MRAS and Metabolic Fluxes
+
+### 3.1. Calculate MRAS and Fluxes for Human Data
+
+```{r}
+# Calculate MRAS for human data
+scores_tcga <- calculate_reaction_score(human_tcga_coc3)
+
+# Calculate metabolic fluxes for human data
+data("human_blood")  # Load the metabolic medium
+flux_tcga <- compute_flux(mras = scores_tcga, medium = human_blood)
+flux_tcga <- cbrt(flux_tcga)  # Apply cubic root normalization
+```
+
+### 3.2. Calculate MRAS and Fluxes for Mouse Data
+
+```{r}
+# Calculate MRAS for mouse data
+scores_bpcre <- calculate_reaction_score(mouse_bpcre)
+
+# Calculate metabolic fluxes for mouse data
+flux_bpcre <- compute_flux(mras = scores_bpcre, medium = human_blood)
+flux_bpcre <- cbrt(flux_bpcre)  # Apply cubic root normalization
+```
+
+---
+
+## 4. Comparative Analysis of Metabolic Fluxes
+
+### 4.1. Overall Comparison of Metabolic Fluxes
+
+```{r}
+# Load metabolic reaction information
+data("human_gem")
+
+# Find common reactions between human and mouse
+common_reactions <- intersect(rownames(flux_tcga), rownames(flux_bpcre))
+
+# Filter fluxes for common reactions
+flux_tcga_common <- flux_tcga[common_reactions, ]
+flux_bpcre_common <- flux_bpcre[common_reactions, ]
+
+# Calculate mean fluxes for each group
+mean_flux_tcga <- rowMeans(flux_tcga_common)
+mean_flux_bpcre <- rowMeans(flux_bpcre_common)
+
+# Create data frames for comparison
+df_human <- data.frame(
+  Reaction_ID = names(mean_flux_tcga),
+  Mean_Flux_Human = mean_flux_tcga
+)
+
+df_mouse <- data.frame(
+  Reaction_ID = names(mean_flux_bpcre),
+  Mean_Flux_Mouse = mean_flux_bpcre
+)
+
+# Combine data frames by Reaction_ID
+df_combined <- merge(df_human, df_mouse, by = "Reaction_ID")
+
+# Calculate correlation between mean fluxes
+correlation <- cor(df_combined$Mean_Flux_Human, df_combined$Mean_Flux_Mouse, method = "spearman")
+
+# Display the correlation
+print(paste("Spearman correlation between human and mouse mean fluxes:", round(correlation, 3)))
+
+# Visualize the relationship between mean fluxes
+p1 <- ggplot(df_combined, aes(x = Mean_Flux_Human, y = Mean_Flux_Mouse)) +
+  geom_point(alpha = 0.5) +
+  geom_smooth(method = "lm", se = FALSE, color = "blue") +
+  labs(
+    title = paste("Figure 1: Comparison of Mean Metabolic Fluxes\nSpearman Correlation:", round(correlation, 3)),
+    x = "Mean Flux (Human: ACC)",
+    y = "Mean Flux (Mouse: BPCre)"
+  ) +
+  theme_bw()  # White background
+
+# Display the plot
+print(p1)
+
+# Save the plot in high quality
+ggsave("Figure1_Mean_Fluxes.png", plot = p1, width = 8, height = 6, dpi = 300, bg = "white")
+```
+
+---
+
+## 5. Metabolic Pathway Analysis
+
+### 5.1. Function to Calculate Pathway Activity
+
+```{r}
+# Define function to calculate activity per metabolic pathway
+calculate_pathway_activity <- function(flux_data, gem_data) {
+  pathways <- unique(gem_data$SUBSYSTEM)
+  pathway_activity <- data.frame(Pathway = pathways, Activity = NA)
+  
+  for (i in seq_along(pathways)) {
+    pathway <- pathways[i]
+    reactions_in_pathway <- gem_data$ID[gem_data$SUBSYSTEM == pathway]
+    reactions_in_flux <- intersect(reactions_in_pathway, rownames(flux_data))
+    if (length(reactions_in_flux) > 0) {
+      # Ensure the result is a matrix
+      activity <- rowMeans(abs(flux_data[reactions_in_flux, , drop = FALSE]))
+      pathway_activity$Activity[i] <- mean(activity, na.rm = TRUE)
+    } else {
+      pathway_activity$Activity[i] <- NA
+    }
+  }
+  
+  return(pathway_activity)
+}
+```
+
+### 5.2. Calculate Pathway Activity for Each Group
+
+```{r}
+# Calculate pathway activity for human data
+pathway_activity_tcga <- calculate_pathway_activity(flux_tcga, human_gem)
+
+# Calculate pathway activity for mouse data
+pathway_activity_bpcre <- calculate_pathway_activity(flux_bpcre, human_gem)
+
+# Combine human and mouse pathway activities
+pathway_activity_combined <- merge(pathway_activity_tcga, pathway_activity_bpcre, by = "Pathway", suffixes = c("_Human", "_Mouse"))
+
+# Calculate correlation between pathway activities
+correlation_pathways <- cor(pathway_activity_combined$Activity_Human, pathway_activity_combined$Activity_Mouse, method = "spearman", use = "complete.obs")
+
+# Display the correlation
+print(paste("Spearman correlation of pathway activities:", round(correlation_pathways, 3)))
+
+# Visualize the relationship
+p2 <- ggplot(pathway_activity_combined, aes(x = Activity_Human, y = Activity_Mouse)) +
+  geom_point(alpha = 0.5) +
+  geom_smooth(method = "lm", se = FALSE, color = "red") +
+  labs(
+    title = paste("Figure 2: Comparison of Metabolic Pathway Activities\nSpearman Correlation:", round(correlation_pathways, 3)),
+    x = "Activity (Human: ACC)",
+    y = "Activity (Mouse: BPCre)"
+  ) +
+  theme_bw()  # White background
+
+# Display the plot
+print(p2)
+
+# Save the plot in high quality
+ggsave("Figure2_Pathway_Activity.png", plot = p2, width = 8, height = 6, dpi = 300, bg = "white")
+```
+
+---
+
+## 6. Correlation Analysis of Specific Metabolic Pathways
+
+### 6.1. Analysis for "Steroid metabolism"
+
+```{r}
+# Define pathway of interest
+pathway_of_interest <- "Steroid metabolism"
+
+# Get reactions in this pathway
+reactions_in_pathway <- human_gem$ID[human_gem$SUBSYSTEM == pathway_of_interest]
+
+# Check if reactions exist
+if (length(reactions_in_pathway) > 0) {
+  # Extract fluxes for humans
+  flux_human_pathway <- flux_tcga[reactions_in_pathway, , drop = FALSE]
+  
+  # Extract fluxes for mice
+  flux_mouse_pathway <- flux_bpcre[reactions_in_pathway, , drop = FALSE]
+  
+  # Ensure reactions exist in both datasets
+  common_reactions <- intersect(rownames(flux_human_pathway), rownames(flux_mouse_pathway))
+  
+  flux_human_pathway <- flux_human_pathway[common_reactions, , drop = FALSE]
+  flux_mouse_pathway <- flux_mouse_pathway[common_reactions, , drop = FALSE]
+  
+  # Calculate correlation for each reaction
+  correlation_results <- data.frame(
+    Reaction_ID = common_reactions,
+    Correlation = NA,
+    P_value = NA,
+    Method = "Spearman",
+    stringsAsFactors = FALSE
+  )
+  
+  for (i in seq_along(common_reactions)) {
+    reaction <- common_reactions[i]
+    
+    # Human fluxes for the reaction
+    human_fluxes <- as.numeric(flux_human_pathway[reaction, ])
+    
+    # Mouse fluxes for the reaction
+    mouse_fluxes <- as.numeric(flux_mouse_pathway[reaction, ])
+    
+    # Combine fluxes using the smallest sample size (samples are not paired)
+    min_samples <- min(length(human_fluxes), length(mouse_fluxes))
+    human_fluxes <- human_fluxes[1:min_samples]
+    mouse_fluxes <- mouse_fluxes[1:min_samples]
+    
+    # Calculate Spearman correlation
+    cor_test <- cor.test(human_fluxes, mouse_fluxes, method = "spearman")
+    
+    # Store the results
+    correlation_results$Correlation[i] <- cor_test$estimate
+    correlation_results$P_value[i] <- cor_test$p.value
+  }
+  
+  # Order by highest absolute correlations
+  correlation_results <- correlation_results[order(-abs(correlation_results$Correlation)), ]
+  
+  # Select the top 30 reactions
+  top_30_correlations <- head(correlation_results, 30)
+  
+  # Add reaction information
+  top_30_correlations <- merge(top_30_correlations, human_gem[, c("ID", "EQUATION", "SUBSYSTEM")],
+                               by.x = "Reaction_ID", by.y = "ID", all.x = TRUE)
+  
+  # Visualize the table using 'gt'
+  tabela_gt1 <- top_30_correlations %>%
+    gt() %>%
+    tab_header(
+      title = md(paste("**Table:** Top 30 Reactions in Pathway", pathway_of_interest)),
+      subtitle = "Highest Correlations between Human and Mouse Fluxes"
+    ) %>%
+    fmt_number(
+      columns = c("Correlation", "P_value"),
+      decimals = 3
+    ) %>%
+    data_color(
+      columns = "Correlation",
+      colors = scales::col_numeric(
+        palette = c("red", "white", "blue"),
+        domain = c(-1, 1)
+      )
+    ) %>%
+    cols_label(
+      Reaction_ID = "Reaction ID",
+      Correlation = "Correlation",
+      P_value = "P-value",
+      Method = "Method",
+      EQUATION = "Equation",
+      SUBSYSTEM = "Subsystem"
+    ) %>%
+    tab_options(
+      table.background.color = "white"
+    )
+  
+  # Display the table
+  print(tabela_gt1)
+  
+  # Save the table as a PNG image
+  gtsave(tabela_gt1, "Table_Top30_Reactions_Specific_Pathway.png")
+  
+} else {
+  print(paste("No reactions found for the pathway:", pathway_of_interest))
+}
+```
+
+---
+
+## 7. Advanced Clustering and Visualization
+
+### 7.1. Principal Component Analysis (PCA)
+
+```{r}
+# Combine fluxes for humans and mice
+combined_flux <- cbind(flux_tcga, flux_bpcre)
+
+# Transpose to have samples in rows
+combined_flux_t <- t(combined_flux)
+
+# Scale the data
+combined_flux_scaled <- scale(combined_flux_t)
+
+# Remove columns with zero variance or all NA values
+zero_var_columns <- apply(combined_flux_scaled, 2, function(x) {
+  var_x <- var(x, na.rm = TRUE)
+  is.na(var_x) || var_x == 0  # Check if variance is NA or zero
+})
+
+if (any(zero_var_columns)) {
+  combined_flux_scaled <- combined_flux_scaled[, !zero_var_columns]
+}
+
+# Perform PCA
+pca_result <- prcomp(combined_flux_scaled, center = TRUE)
+
+# Create a data frame with PCA results
+pca_df <- data.frame(pca_result$x)
+pca_df$Group <- c(rep("Human_Tumor", ncol(flux_tcga)),
+                  rep("Mouse_BPCre", ncol(flux_bpcre)))
+
+# Visualize the first two principal components
+p4 <- ggplot(pca_df, aes(x = PC1, y = PC2, color = Group)) +
+  geom_point(size = 2) +
+  labs(
+    title = "Figure 4: PCA Analysis of Metabolic Fluxes",
+    x = "PC1",
+    y = "PC2"
+  ) +
+  theme_bw()  # White background
+
+# Display the plot
+print(p4)
+
+# Save the plot in high quality
+ggsave("Figure4_PCA_Metabolic_Fluxes.png", plot = p4, width = 8, height = 6, dpi = 300, bg = "white")
+```
+
+---
+
+## 8. Correlation Analysis for All Reactions
+
+### 8.1. Correlation of All Fluxes between Human and Mouse
+
+```{r}
+# Extract fluxes for humans (tumor samples)
+flux_human_all <- flux_tcga
+
+# Extract fluxes for mice (tumor samples)
+flux_mouse_all <- flux_bpcre
+
+# Find common reactions between human and mouse
+common_reactions <- intersect(rownames(flux_human_all), rownames(flux_mouse_all))
+
+# Filter fluxes for common reactions
+flux_human_all <- flux_human_all[common_reactions, , drop = FALSE]
+flux_mouse_all <- flux_mouse_all[common_reactions, , drop = FALSE]
+
+# Initialize data frame to store results
+correlation_results_all <- data.frame(
+  Reaction_ID = common_reactions,
+  Correlation = NA,
+  P_value = NA,
+  Method = "Spearman",
+  stringsAsFactors = FALSE
+)
+
+# Calculate correlation for each reaction
+for (i in seq_along(common_reactions)) {
+  reaction <- common_reactions[i]
+  
+  # Human fluxes for the reaction
+  human_fluxes <- as.numeric(flux_human_all[reaction, ])
+  
+  # Mouse fluxes for the reaction
+  mouse_fluxes <- as.numeric(flux_mouse_all[reaction, ])
+  
+  # Combine fluxes using the smallest sample size (samples are not paired)
+  min_samples <- min(length(human_fluxes), length(mouse_fluxes))
+  human_fluxes <- human_fluxes[1:min_samples]
+  mouse_fluxes <- mouse_fluxes[1:min_samples]
+  
+  # Calculate Spearman correlation
+  cor_test <- cor.test(human_fluxes, mouse_fluxes, method = "spearman")
+  
+  # Store the results
+  correlation_results_all$Correlation[i] <- cor_test$estimate
+  correlation_results_all$P_value[i] <- cor_test$p.value
+}
+
+# Order by highest absolute correlations
+correlation_results_all <- correlation_results_all[order(-abs(correlation_results_all$Correlation)), ]
+
+# Select the top 30 reactions
+top_30_correlations_all <- head(correlation_results_all, 30)
+
+# Add reaction information
+top_30_correlations_all <- merge(top_30_correlations_all, human_gem[, c("ID", "EQUATION", "SUBSYSTEM")],
+                                 by.x = "Reaction_ID", by.y = "ID", all.x = TRUE)
+
+# Reorder the columns
+top_30_correlations_all <- top_30_correlations_all[, c("Reaction_ID", "Correlation", "P_value", "Method", "EQUATION", "SUBSYSTEM")]
+
+# Visualize the table using 'gt'
+tabela_gt2 <- top_30_correlations_all %>%
+  gt() %>%
+  tab_header(
+    title = md("**Table:** Top 30 Reactions with Highest Correlations"),
+    subtitle = "Between Human and Mouse Fluxes"
+  ) %>%
+  fmt_number(
+    columns = c("Correlation", "P_value"),
+    decimals = 3
+  ) %>%
+  data_color(
+    columns = "Correlation",
+    colors = scales::col_numeric(
+      palette = c("red", "white", "blue"),
+      domain = c(-1, 1)
+    )
+  ) %>%
+  cols_label(
+    Reaction_ID = "Reaction ID",
+    Correlation = "Correlation",
+    P_value = "P-value",
+    Method = "Method",
+    EQUATION = "Equation",
+    SUBSYSTEM = "Subsystem"
+  ) %>%
+  tab_options(
+    table.background.color = "white"
+  )
+
+# Display the table
+print(tabela_gt2)
+
+# Save the table as a PNG image
+gtsave(tabela_gt2, "Table_Top30_Correlations_All_Reactions.png")
+
+# Optional: Save the table as a CSV file
+write.csv(top_30_correlations_all, file = "Top30_Correlations_flux_tcga_flux_bpcre.csv", row.names = FALSE)
+
+# Create a heatmap of the correlations of the top 30 reactions and save in high quality
+correlation_matrix <- as.matrix(top_30_correlations_all$Correlation)
+rownames(correlation_matrix) <- top_30_correlations_all$Reaction_ID
+
+# Save the heatmap with a white background
+png("Heatmap_Top30_Correlations.png", width = 800, height = 1000, res = 150, bg = "white")
+pheatmap(correlation_matrix, cluster_rows = FALSE, cluster_cols = FALSE,
+         main = "Heatmap of Correlations of Top 30 Reactions between flux_tcga and flux_bpcre")
+dev.off()
+```
+
+---
+
+## 9. Comparative Analysis for Specific Subsystems
+
+### 9.1. Analysis for "Pyrimidine metabolism"
+
+```{r}
+# Define the subsystem of interest
+subsystem_of_interest <- "Pyrimidine metabolism"
+
+# Get reactions in this subsystem
+reactions_in_subsystem <- human_gem$ID[human_gem$SUBSYSTEM == subsystem_of_interest]
+
+# Find common reactions in the subsystem between human and mouse
+common_reactions <- intersect(rownames(flux_tcga), rownames(flux_bpcre))
+common_reactions_in_subsystem <- intersect(common_reactions, reactions_in_subsystem)
+
+# Check if reactions exist
+if(length(common_reactions_in_subsystem) > 0) {
+  # Filter fluxes for common reactions in the subsystem
+  flux_tcga_common <- flux_tcga[common_reactions_in_subsystem, ]
+  flux_bpcre_common <- flux_bpcre[common_reactions_in_subsystem, ]
+
+  # Calculate mean fluxes for each group
+  mean_flux_tcga <- rowMeans(flux_tcga_common)
+  mean_flux_bpcre <- rowMeans(flux_bpcre_common)
+
+  # Create data frames for comparison
+  df_human <- data.frame(
+    Reaction_ID = names(mean_flux_tcga),
+    Mean_Flux_Human = mean_flux_tcga
+  )
+
+  df_mouse <- data.frame(
+    Reaction_ID = names(mean_flux_bpcre),
+    Mean_Flux_Mouse = mean_flux_bpcre
+  )
+
+  # Combine data frames by Reaction_ID
+  df_combined <- merge(df_human, df_mouse, by = "Reaction_ID")
+
+  # Calculate correlation between mean fluxes and p-value
+  cor_test <- cor.test(df_combined$Mean_Flux_Human, df_combined$Mean_Flux_Mouse, method = "spearman")
+  correlation <- cor_test$estimate
+  p_value <- cor_test$p.value
+
+  # Display the correlation and p-value
+  print(paste("Spearman correlation between human and mouse mean fluxes in subsystem", subsystem_of_interest, ":", round(correlation, 3)))
+  print(paste("P-value:", signif(p_value, 3)))
+
+  # Visualize the relationship between mean fluxes
+  p_subsystem <- ggplot(df_combined, aes(x = Mean_Flux_Human, y = Mean_Flux_Mouse)) +
+    geom_point(alpha = 0.5) +
+    geom_smooth(method = "lm", se = FALSE, color = "red") +
+    labs(
+      title = paste("Figure: Comparison of Mean Fluxes in Subsystem", subsystem_of_interest),
+      subtitle = paste("Spearman Correlation:", round(correlation, 3), "| P-value:", format.pval(p_value, digits=2, eps=0.001)),
+      x = "Mean Flux (Human: ACC)",
+      y = "Mean Flux (Mouse: BPCre)"
+    ) +
+    theme_bw()  # White background
+
+  # Display the plot
+  print(p_subsystem)
+
+  # Save the plot in high quality
+  ggsave("Figure_Mean_Fluxes_Pyrimidine_Metabolism.png", plot = p_subsystem, width = 8, height = 6, dpi = 300, bg = "white")
+
+} else {
+  print(paste("No common reactions found in the subsystem:", subsystem_of_interest))
+}
+```
+
+### 9.2. Analysis for "Arginine and proline metabolism"
+
+```{r}
+# Define the subsystem of interest
+subsystem_of_interest <- "Arginine and proline metabolism"
+
+# Get reactions in this subsystem
+reactions_in_subsystem <- human_gem$ID[human_gem$SUBSYSTEM == subsystem_of_interest]
+
+# Find common reactions in the subsystem between human and mouse
+common_reactions <- intersect(rownames(flux_tcga), rownames(flux_bpcre))
+common_reactions_in_subsystem <- intersect(common_reactions, reactions_in_subsystem)
+
+# Check if reactions exist
+if(length(common_reactions_in_subsystem) > 0) {
+  # Filter fluxes for common reactions in the subsystem
+  flux_tcga_common <- flux_tcga[common_reactions_in_subsystem, ]
+  flux_bpcre_common <- flux_bpcre[common_reactions_in_subsystem, ]
+
+  # Calculate mean fluxes for each group
+  mean_flux_tcga <- rowMeans(flux_tcga_common)
+  mean_flux_bpcre <- rowMeans(flux_bpcre_common)
+
+  # Create data frames for comparison
+  df_human <- data.frame(
+    Reaction_ID = names(mean_flux_tcga),
+    Mean_Flux_Human = mean_flux_tcga
+  )
+
+  df_mouse <- data.frame(
+    Reaction_ID = names(mean_flux_bpcre),
+    Mean_Flux_Mouse = mean_flux_bpcre
+  )
+
+  # Combine data frames by Reaction_ID
+  df_combined <- merge(df_human, df_mouse, by = "Reaction_ID")
+
+  # Calculate correlation between mean fluxes and p-value
+  cor_test <- cor.test(df_combined$Mean_Flux_Human, df_combined$Mean_Flux_Mouse, method = "spearman")
+  correlation <- cor_test$estimate
+  p_value <- cor_test$p.value
+
+  # Display the correlation and p-value
+  print(paste("Spearman correlation between human and mouse mean fluxes in subsystem", subsystem_of_interest, ":", round(correlation, 3)))
+  print(paste("P-value:", signif(p_value, 3)))
+
+  # Visualize the relationship between mean fluxes
+  p_subsystem <- ggplot(df_combined, aes(x = Mean_Flux_Human, y = Mean_Flux_Mouse)) +
+    geom_point(alpha = 0.5) +
+    geom_smooth(method = "lm", se = FALSE, color = "blue") +
+    labs(
+      title = paste("Figure: Comparison of Mean Fluxes in Subsystem", subsystem_of_interest),
+      subtitle = paste("Spearman Correlation:", round(correlation, 3), "| P-value:", format.pval(p_value, digits=2, eps=0.001)),
+      x = "Mean Flux (Human: ACC)",
+      y = "Mean Flux (Mouse: BPCre)"
+    ) +
+    theme_bw()  # White background
+
+  # Display the plot
+  print(p_subsystem)
+
+  # Save the plot in high quality
+  ggsave("Figure_Mean_Fluxes_Arginine_Proline_Metabolism.png", plot = p_subsystem, width = 8, height = 6, dpi = 300, bg = "white")
+
+} else {
+  print(paste("No common reactions found in the subsystem:", subsystem_of_interest))
+}
+```
+
+### 9.3. Analysis for "Alanine, aspartate and glutamate metabolism"
+
+```{r}
+# Define the subsystem of interest
+subsystem_of_interest <- "Alanine, aspartate and glutamate metabolism"
+
+# Get reactions in this subsystem
+reactions_in_subsystem <- human_gem$ID[human_gem$SUBSYSTEM == subsystem_of_interest]
+
+# Find common reactions in the subsystem between human and mouse
+common_reactions <- intersect(rownames(flux_tcga), rownames(flux_bpcre))
+common_reactions_in_subsystem <- intersect(common_reactions, reactions_in_subsystem)
+
+# Check if reactions exist
+if(length(common_reactions_in_subsystem) > 0) {
+  # Filter fluxes for common reactions in the subsystem
+  flux_tcga_common <- flux_tcga[common_reactions_in_subsystem, ]
+  flux_bpcre_common <- flux_bpcre[common_reactions_in_subsystem, ]
+
+  # Calculate mean fluxes for each group
+  mean_flux_tcga <- rowMeans(flux_tcga_common)
+  mean_flux_bpcre <- rowMeans(flux_bpcre_common)
+
+  # Create data frames for comparison
+  df_human <- data.frame(
+    Reaction_ID = names(mean_flux_tcga),
+    Mean_Flux_Human = mean_flux_tcga
+  )
+
+  df_mouse <- data.frame(
+    Reaction_ID = names(mean_flux_bpcre),
+    Mean_Flux_Mouse = mean_flux_bpcre
+  )
+
+  # Combine data frames by Reaction_ID
+  df_combined <- merge(df_human, df_mouse, by = "Reaction_ID")
+
+  # Calculate correlation between mean fluxes and p-value
+  cor_test <- cor.test(df_combined$Mean_Flux_Human, df_combined$Mean_Flux_Mouse, method = "spearman")
+  correlation <- cor_test$estimate
+  p_value <- cor_test$p.value
+
+  # Display the correlation and p-value
+  print(paste("Spearman correlation between human and mouse mean fluxes in subsystem", subsystem_of_interest, ":", round(correlation, 3)))
+  print(paste("P-value:", signif(p_value, 3)))
+
+  # Visualize the relationship between mean fluxes
+  p_subsystem <- ggplot(df_combined, aes(x = Mean_Flux_Human, y = Mean_Flux_Mouse)) +
+    geom_point(alpha = 0.5) +
+    geom_smooth(method = "lm", se = FALSE, color = "green") +
+    labs(
+      title = paste("Figure: Comparison of Mean Fluxes in Subsystem", subsystem_of_interest),
+      subtitle = paste("Spearman Correlation:", round(correlation, 3), "| P-value:", format.pval(p_value, digits=2, eps=0.001)),
+      x = "Mean Flux (Human: ACC)",
+      y = "Mean Flux (Mouse: BPCre)"
+    ) +
+    theme_bw()  # White background
+
+  # Display the plot
+  print(p_subsystem)
+
+  # Save the plot in high quality
+  ggsave("Figure_Mean_Fluxes_Alanine_Aspartate_Glutamate_Metabolism.png", plot = p_subsystem, width = 8, height = 6, dpi = 300, bg = "white")
+
+} else {
+  print(paste("No common reactions found in the subsystem:", subsystem_of_interest))
+}
+```
