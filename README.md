@@ -2,7 +2,7 @@
 
 ## Overview
 
-This project presents a comparative metabolic flux analysis between human adrenocortical carcinoma (ACC) samples (subgroup ACC-COC3) and the mouse BPCre tumor model. Using a methodology adapted from [REFERENCE ARTICLE], we aim to validate metabolic similarities between these two models and explore key metabolic pathways that may serve as potential therapeutic targets.
+This project presents a comparative metabolic flux analysis between human adrenocortical carcinoma (ACC) samples (subgroup ACC-COC3) and the mouse BPCre tumor model. Using a methodology adapted from Huang et al., 2023, we aim to validate metabolic similarities between these two models and explore key metabolic pathways that may serve as potential therapeutic targets.
 
 The analysis leverages normalized RNA-seq data and a detailed calculation of Metabolic Reaction Activity Scores (MRAS) to compute metabolic fluxes, offering insights into the metabolic behavior of tumor tissues in both species.
 
