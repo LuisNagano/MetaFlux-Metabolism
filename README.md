@@ -6,7 +6,7 @@ This project presents a comparative metabolic flux analysis between human adreno
 
 Reference:
 
-![Metaflux_paper](https://github.com/LuisNagano/MetaFlux-Metabolism/blob/main/Metaflux_paper.png)
+![Metaflux_paper](https://github.com/LuisNagano/MetaFlux-Metabolism/blob/main/Metaflux_paper(1).png)
 
 The analysis leverages normalized RNA-seq data and a detailed calculation of Metabolic Reaction Activity Scores (MRAS) to compute metabolic fluxes, offering insights into the metabolic behavior of tumor tissues in both species.
 
